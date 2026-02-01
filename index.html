@@ -1,31 +1,23 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Snowflake, Plus, Users, Wallet, CheckCircle, ArrowRight, X, User, Trash2 } from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously } from 'firebase/auth';
+import { getFirestore, doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
 
-// --- GITHUB INTEGRATION HOOKS ---
-// When you are ready to move to GitHub, you will edit these two functions.
-// Right now, they use the browser's LocalStorage so it works instantly on your device.
-
-const STORAGE_KEY = 'alpine_ski_trip_data';
-
-// Hook 1: Load Data
-const loadData = () => {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
-  } catch (e) {
-    console.error("Failed to load", e);
-  }
-  return null;
+// --- FIREBASE SETUP ---
+const firebaseConfig = {
+  apiKey: "AIzaSyAb915yN6jSm-c5RukkffBtN5MPO79zGFM",
+  authDomain: "schneegerverteiler.firebaseapp.com",
+  projectId: "schneegerverteiler",
+  storageBucket: "schneegerverteiler.firebasestorage.app",
+  messagingSenderId: "348348869333",
+  appId: "1:348348869333:web:ae7faf8b8250368310105c"
 };
 
-// Hook 2: Save Data
-const saveData = (data) => {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch (e) {
-    console.error("Failed to save", e);
-  }
-};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const tripDocRef = doc(db, 'trips', 'schneegerverteiler');
 
 // --- APP CONFIGURATION ---
 const PARTICIPANT_CONFIG = {
@@ -47,6 +39,7 @@ export default function App() {
   const [participants] = useState(DEFAULT_PARTICIPANTS);
   const [expenses, setExpenses] = useState([]);
   const [isSettleOpen, setIsSettleOpen] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
 
   // Form State
   const [amount, setAmount] = useState('');
@@ -56,16 +49,61 @@ export default function App() {
 
   // --- INIT LOAD ---
   useEffect(() => {
-    const data = loadData();
-    if (data && data.expenses) {
-      setExpenses(data.expenses);
-    }
+    let unsubscribe = null;
+
+    const initFirebase = async () => {
+      try {
+        if (!auth.currentUser) {
+          await signInAnonymously(auth);
+        }
+      } catch (error) {
+        console.error('Failed to sign in anonymously', error);
+        return;
+      }
+
+      unsubscribe = onSnapshot(
+        tripDocRef,
+        (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data();
+            if (data?.expenses) {
+              setExpenses(data.expenses);
+            }
+          } else {
+            setExpenses([]);
+          }
+          setIsHydrated(true);
+        },
+        (error) => {
+          console.error('Failed to load data', error);
+        }
+      );
+    };
+
+    initFirebase();
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, []);
 
   // --- PERSISTENCE ---
   useEffect(() => {
-    saveData({ expenses });
-  }, [expenses]);
+    if (!isHydrated) return;
+
+    setDoc(
+      tripDocRef,
+      {
+        expenses,
+        updatedAt: serverTimestamp()
+      },
+      { merge: true }
+    ).catch((error) => {
+      console.error('Failed to save data', error);
+    });
+  }, [expenses, isHydrated]);
 
   // --- LOGIC: BALANCES ---
   const balances = useMemo(() => {

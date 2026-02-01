@@ -1,0 +1,16 @@
+{
+  "name": "schneegerverteiler",
+  "version": "1.0.0",
+  "description": "Just a little cost splitting webapp",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "firebase": "^10.12.2"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}
