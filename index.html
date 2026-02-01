@@ -1,0 +1,409 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { Snowflake, Plus, Users, Wallet, CheckCircle, ArrowRight, X, User, Trash2 } from 'lucide-react';
+
+// --- GITHUB INTEGRATION HOOKS ---
+// When you are ready to move to GitHub, you will edit these two functions.
+// Right now, they use the browser's LocalStorage so it works instantly on your device.
+
+const STORAGE_KEY = 'alpine_ski_trip_data';
+
+// Hook 1: Load Data
+const loadData = () => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch (e) {
+    console.error("Failed to load", e);
+  }
+  return null;
+};
+
+// Hook 2: Save Data
+const saveData = (data) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.error("Failed to save", e);
+  }
+};
+
+// --- APP CONFIGURATION ---
+const PARTICIPANT_CONFIG = {
+  "Theo": "TH",
+  "Lillian": "LL",
+  "Ruben": "RB",
+  "Noreen": "NR",
+  "Casper": "CS",
+  "Swenne": "SW",
+  "Anneke": "AJ",
+  "Michael": "MG",
+  "Marten": "MM"
+};
+
+const DEFAULT_PARTICIPANTS = Object.keys(PARTICIPANT_CONFIG);
+
+export default function App() {
+  // --- STATE ---
+  const [participants] = useState(DEFAULT_PARTICIPANTS);
+  const [expenses, setExpenses] = useState([]);
+  const [isSettleOpen, setIsSettleOpen] = useState(false);
+
+  // Form State
+  const [amount, setAmount] = useState('');
+  const [description, setDescription] = useState('');
+  const [payer, setPayer] = useState(DEFAULT_PARTICIPANTS[0]); // Default to first person
+  const [involved, setInvolved] = useState([]); // Default to NONE selected
+
+  // --- INIT LOAD ---
+  useEffect(() => {
+    const data = loadData();
+    if (data && data.expenses) {
+      setExpenses(data.expenses);
+    }
+  }, []);
+
+  // --- PERSISTENCE ---
+  useEffect(() => {
+    saveData({ expenses });
+  }, [expenses]);
+
+  // --- LOGIC: BALANCES ---
+  const balances = useMemo(() => {
+    const bal = {};
+    participants.forEach(p => bal[p] = 0);
+
+    expenses.forEach(exp => {
+      // Prevent division by zero if somehow involved is empty
+      if (!exp.involved || exp.involved.length === 0) return;
+
+      const share = exp.amount / exp.involved.length;
+      // The payer gets positive credit (they paid)
+      bal[exp.payer] += parseFloat(exp.amount);
+      // Everyone involved gets negative debit (they consumed)
+      exp.involved.forEach(person => {
+        bal[person] -= share;
+      });
+    });
+    return bal;
+  }, [expenses, participants]);
+
+  const totalSpent = expenses.reduce((sum, item) => sum + parseFloat(item.amount), 0);
+
+  // --- ACTIONS ---
+  const handleAddExpense = (e) => {
+    e.preventDefault();
+    if (!amount || !description || involved.length === 0) return;
+
+    const newExpense = {
+      id: Date.now(),
+      amount: parseFloat(amount),
+      description,
+      payer,
+      involved,
+      date: new Date().toISOString()
+    };
+
+    setExpenses([newExpense, ...expenses]);
+    
+    // Reset Form (Keep Payer same, clear involved)
+    setAmount('');
+    setDescription('');
+    setInvolved([]); 
+  };
+
+  const handleDeleteExpense = (id) => {
+    setExpenses(expenses.filter(exp => exp.id !== id));
+  };
+
+  const toggleInvolved = (person) => {
+    if (involved.includes(person)) {
+      setInvolved(involved.filter(p => p !== person));
+    } else {
+      setInvolved([...involved, person]);
+    }
+  };
+
+  const setOnly = (person) => {
+    setInvolved([person]);
+  };
+
+  const selectAll = () => {
+    setInvolved(participants);
+  };
+
+  // --- LOGIC: SETTLEMENT ALGORITHM ---
+  const calculateSettlements = () => {
+    let debtors = [];
+    let creditors = [];
+    
+    // 1. Separate into two lists
+    Object.entries(balances).forEach(([person, amount]) => {
+      // Round to 2 decimals to avoid floating point weirdness
+      const val = Math.round(amount * 100) / 100;
+      if (val < -0.01) debtors.push({ person, amount: val }); // Negative amount
+      if (val > 0.01) creditors.push({ person, amount: val });
+    });
+
+    // 2. Sort by magnitude (optional, helps heuristics)
+    debtors.sort((a, b) => a.amount - b.amount);
+    creditors.sort((a, b) => b.amount - a.amount);
+
+    const transactions = [];
+
+    // 3. Greedy matching
+    let i = 0; // debtor index
+    let j = 0; // creditor index
+
+    while (i < debtors.length && j < creditors.length) {
+      const debtor = debtors[i];
+      const creditor = creditors[j];
+
+      // The amount to settle is the minimum of what debtor owes vs what creditor is owed
+      const amountToSettle = Math.min(Math.abs(debtor.amount), creditor.amount);
+
+      transactions.push({
+        from: debtor.person,
+        to: creditor.person,
+        amount: amountToSettle.toFixed(2)
+      });
+
+      // Adjust remaining balances
+      debtor.amount += amountToSettle;
+      creditor.amount -= amountToSettle;
+
+      // If settled, move indices
+      if (Math.abs(debtor.amount) < 0.01) i++;
+      if (creditor.amount < 0.01) j++;
+    }
+
+    return transactions;
+  };
+
+  const settlements = isSettleOpen ? calculateSettlements() : [];
+
+  return (
+    <div className="min-h-screen bg-white text-slate-800 font-sans selection:bg-orange-100 pb-20">
+      
+      {/* HEADER */}
+      <header className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b border-slate-100 px-6 py-4 flex justify-between items-center">
+        <div className="flex items-center gap-2 text-orange-600">
+          <Snowflake size={24} />
+          <span className="font-bold text-lg tracking-tight text-slate-900">SCHNEEGERVERTEILER</span>
+        </div>
+        <div className="text-right">
+          <p className="text-xs text-slate-400 font-medium uppercase tracking-wider">Total Trip Cost</p>
+          <p className="text-xl font-bold text-slate-900">€{totalSpent.toFixed(2)}</p>
+        </div>
+      </header>
+
+      <main className="max-w-md mx-auto px-4 pt-6 space-y-8">
+        
+        {/* STANDINGS SCROLLER */}
+        <section>
+          <div className="flex items-center justify-between mb-3 px-2">
+            <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Current Standings</h2>
+            <button 
+              onClick={() => setIsSettleOpen(true)}
+              className="text-orange-600 text-xs font-bold hover:bg-orange-50 px-2 py-1 rounded"
+            >
+              SETTLE UP
+            </button>
+          </div>
+          <div className="flex gap-3 overflow-x-auto pb-4 px-2 no-scrollbar snap-x">
+            {participants.map(p => {
+              const bal = balances[p] || 0;
+              const isPositive = bal >= 0;
+              return (
+                <div key={p} className="snap-start flex-shrink-0 flex flex-col items-center justify-center bg-slate-50 w-24 h-24 rounded-2xl border border-slate-100">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold mb-2 ${isPositive ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                    {PARTICIPANT_CONFIG[p]}
+                  </div>
+                  <span className="text-sm font-medium text-slate-700">{p}</span>
+                  <span className={`text-xs font-bold ${isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {isPositive ? '+' : ''}€{bal.toFixed(0)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* QUICK ADD FORM */}
+        <section className="bg-slate-50 rounded-3xl p-5 shadow-sm border border-slate-100">
+          <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Add Expense</h2>
+          <form onSubmit={handleAddExpense} className="space-y-4">
+            
+            {/* Top Row: Amount & Payer */}
+            <div className="flex gap-3">
+              <div className="relative flex-1">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">€</span>
+                <input 
+                  type="number" 
+                  placeholder="0.00" 
+                  step="0.01"
+                  className="w-full bg-white border border-slate-200 rounded-xl py-3 pl-8 pr-3 text-lg font-bold focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                  value={amount}
+                  onChange={e => setAmount(e.target.value)}
+                />
+              </div>
+              <div className="w-1/3">
+                <select 
+                  className="w-full h-full bg-white border border-slate-200 rounded-xl px-2 text-sm font-medium focus:outline-none focus:border-orange-500 text-slate-600"
+                  value={payer}
+                  onChange={e => setPayer(e.target.value)}
+                >
+                  {participants.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Description */}
+            <input 
+              type="text" 
+              placeholder="What was it for?" 
+              className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+            />
+
+            {/* Who Involved Grid */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-end">
+                <label className="text-xs font-bold text-slate-400 uppercase">For Whom?</label>
+                <div className="space-x-2">
+                   <button 
+                    type="button" 
+                    onClick={selectAll}
+                    className="text-[10px] font-bold text-orange-600 uppercase hover:underline"
+                  >
+                    Select All
+                  </button>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-5 gap-2">
+                {participants.map(p => {
+                  const isSelected = involved.includes(p);
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => toggleInvolved(p)}
+                      onDoubleClick={() => setOnly(p)} // Desktop fallback for 'only'
+                      className={`aspect-square rounded-xl flex items-center justify-center text-xs font-bold transition-all duration-200 ${
+                        isSelected 
+                          ? 'bg-slate-800 text-white shadow-md transform scale-100' 
+                          : 'bg-white border border-slate-200 text-slate-300 transform scale-95'
+                      }`}
+                    >
+                      {PARTICIPANT_CONFIG[p]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <button 
+              type="submit" 
+              className="w-full bg-orange-600 active:bg-orange-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-orange-200 hover:shadow-orange-300 transition-all flex items-center justify-center gap-2 mt-2"
+            >
+              <Plus size={20} strokeWidth={3} />
+              ADD EXPENSE
+            </button>
+
+          </form>
+        </section>
+
+        {/* FEED */}
+        <section>
+          <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3 px-2">Recent Activity</h2>
+          <div className="space-y-3 pb-20">
+            {expenses.length === 0 ? (
+              <div className="text-center py-10 text-slate-400 text-sm italic">
+                No expenses yet. Start adding!
+              </div>
+            ) : (
+              expenses.map(exp => (
+                <div key={exp.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between shadow-sm group">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
+                      <Wallet size={18} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-800">{exp.description}</h3>
+                      <p className="text-xs text-slate-500">
+                        Paid by <span className="font-semibold text-slate-700">{exp.payer}</span>
+                        {exp.involved.length < participants.length && (
+                          <span className="bg-slate-100 px-1 rounded ml-1">For {exp.involved.length} people</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="font-bold text-slate-900">€{exp.amount.toFixed(2)}</span>
+                    <button 
+                      onClick={() => handleDeleteExpense(exp.id)}
+                      className="text-slate-300 hover:text-rose-500 transition-colors p-1"
+                      title="Delete expense"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+      </main>
+
+      {/* SETTLEMENT MODAL */}
+      {isSettleOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl space-y-6 animate-in slide-in-from-bottom-10 duration-300">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-bold text-slate-900">Settlement Plan</h2>
+              <button onClick={() => setIsSettleOpen(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+              {settlements.length === 0 ? (
+                <div className="flex flex-col items-center py-8 text-slate-400">
+                  <CheckCircle size={48} className="mb-2 text-emerald-500" />
+                  <p>All settled up! No one owes anything.</p>
+                </div>
+              ) : (
+                settlements.map((tx, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-slate-700">{tx.from}</span>
+                      <ArrowRight size={14} className="text-slate-400" />
+                      <span className="font-bold text-slate-700">{tx.to}</span>
+                    </div>
+                    <span className="font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-lg border border-orange-100">
+                      €{tx.amount}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <p className="text-center text-xs text-slate-400 leading-relaxed px-4">
+              This plan minimizes the number of transactions required to settle all debts.
+            </p>
+
+            <button 
+              onClick={() => setIsSettleOpen(false)}
+              className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl hover:bg-slate-800 transition-colors"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
