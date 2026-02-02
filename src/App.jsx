@@ -106,7 +106,14 @@ export default function App() {
   }, [expenses, participants]);
 
   const totalSpent = expenses.reduce((sum, item) => sum + parseFloat(item.amount), 0);
-  const visibleExpenses = showAllHistory ? expenses : expenses.slice(0, 5);
+  const sortedExpenses = useMemo(() => {
+    return [...expenses].sort((a, b) => {
+      const aTime = a.createdAt?.seconds ? a.createdAt.seconds * 1000 : Date.parse(a.date) || 0;
+      const bTime = b.createdAt?.seconds ? b.createdAt.seconds * 1000 : Date.parse(b.date) || 0;
+      return bTime - aTime;
+    });
+  }, [expenses]);
+  const visibleExpenses = showAllHistory ? sortedExpenses : sortedExpenses.slice(0, 3);
 
   // --- ACTIONS ---
   const handleAddExpense = async (e) => {
@@ -336,7 +343,7 @@ export default function App() {
             </div>
           ))}
 
-          {expenses.length > 5 && (
+          {expenses.length > 3 && (
             <button
               type="button"
               onClick={() => setShowAllHistory(!showAllHistory)}
