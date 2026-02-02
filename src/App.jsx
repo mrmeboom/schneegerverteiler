@@ -6,12 +6,12 @@ import { getFirestore, collection, doc, onSnapshot, addDoc, deleteDoc, serverTim
 
 // --- FIREBASE SETUP ---
 const firebaseConfig = {
-  apiKey: "AIzaSyAb915yN6jSm-c5RukkffBtN5MPO79zGFM",
-  authDomain: "schneegerverteiler.firebaseapp.com",
-  projectId: "schneegerverteiler",
-  storageBucket: "schneegerverteiler.firebasestorage.app",
-  messagingSenderId: "348348869333",
-  appId: "1:348348869333:web:ae7faf8b8250368310105c"
+  apiKey: "AIzaSyDb4fQzUmVDEJVg4jtbvgL-szbPIdyERXw",
+  authDomain: "schneegerverteiler-2.firebaseapp.com",
+  projectId: "schneegerverteiler-2",
+  storageBucket: "schneegerverteiler-2.firebasestorage.app",
+  messagingSenderId: "193410808692",
+  appId: "1:193410808692:web:a53a1bb843662c9189ca21"
 };
 
 const app = initializeApp(firebaseConfig);
