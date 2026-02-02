@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Snowflake, Plus, Users, Wallet, ArrowRight, Trash2 } from 'lucide-react';
+import { Snowflake, Plus, Users, Wallet, ArrowRight, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
 import { getFirestore, collection, doc, onSnapshot, addDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
@@ -39,6 +39,7 @@ export default function App() {
   const [participants] = useState(DEFAULT_PARTICIPANTS);
   const [expenses, setExpenses] = useState([]);
   const [isSettleOpen, setIsSettleOpen] = useState(false);
+  const [showAllHistory, setShowAllHistory] = useState(false);
 
   // Form State
   const [amount, setAmount] = useState('');
@@ -105,6 +106,14 @@ export default function App() {
   }, [expenses, participants]);
 
   const totalSpent = expenses.reduce((sum, item) => sum + parseFloat(item.amount), 0);
+  const sortedExpenses = useMemo(() => {
+    return [...expenses].sort((a, b) => {
+      const aTime = a.createdAt?.seconds ? a.createdAt.seconds * 1000 : Date.parse(a.date) || 0;
+      const bTime = b.createdAt?.seconds ? b.createdAt.seconds * 1000 : Date.parse(b.date) || 0;
+      return bTime - aTime;
+    });
+  }, [expenses]);
+  const visibleExpenses = showAllHistory ? sortedExpenses : sortedExpenses.slice(0, 3);
 
   // --- ACTIONS ---
   const handleAddExpense = async (e) => {
@@ -316,7 +325,7 @@ export default function App() {
             </div>
           )}
 
-          {expenses.map(exp => (
+          {visibleExpenses.map(exp => (
             <div key={exp.id} className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm flex justify-between gap-3">
               <div>
                 <p className="font-semibold text-slate-900">€{exp.amount.toFixed(2)} · {exp.description}</p>
@@ -333,6 +342,17 @@ export default function App() {
               </button>
             </div>
           ))}
+
+          {expenses.length > 3 && (
+            <button
+              type="button"
+              onClick={() => setShowAllHistory(!showAllHistory)}
+              className="w-full text-sm font-medium text-slate-600 flex items-center justify-center gap-2 py-2"
+            >
+              {showAllHistory ? 'Show less' : `Show all (${expenses.length}) expenses`}
+              {showAllHistory ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+          )}
         </section>
 
         {/* BALANCES */}
