@@ -1,23 +1,23 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Snowflake, Plus, Users, Wallet, CheckCircle, ArrowRight, X, User, Trash2 } from 'lucide-react';
+import { Snowflake, Plus, Users, Wallet, ArrowRight, Trash2 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
-import { getFirestore, doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, collection, doc, onSnapshot, addDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 
 // --- FIREBASE SETUP ---
 const firebaseConfig = {
-  apiKey: "AIzaSyAb915yN6jSm-c5RukkffBtN5MPO79zGFM",
-  authDomain: "schneegerverteiler.firebaseapp.com",
-  projectId: "schneegerverteiler",
-  storageBucket: "schneegerverteiler.firebasestorage.app",
-  messagingSenderId: "348348869333",
-  appId: "1:348348869333:web:ae7faf8b8250368310105c"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const tripDocRef = doc(db, 'trips', 'schneegerverteiler');
+const expensesCollectionRef = collection(db, 'expenses');
 
 // --- APP CONFIGURATION ---
 const PARTICIPANT_CONFIG = {
@@ -39,7 +39,6 @@ export default function App() {
   const [participants] = useState(DEFAULT_PARTICIPANTS);
   const [expenses, setExpenses] = useState([]);
   const [isSettleOpen, setIsSettleOpen] = useState(false);
-  const [isHydrated, setIsHydrated] = useState(false);
 
   // Form State
   const [amount, setAmount] = useState('');
@@ -62,17 +61,13 @@ export default function App() {
       }
 
       unsubscribe = onSnapshot(
-        tripDocRef,
+        expensesCollectionRef,
         (snapshot) => {
-          if (snapshot.exists()) {
-            const data = snapshot.data();
-            if (data?.expenses) {
-              setExpenses(data.expenses);
-            }
-          } else {
-            setExpenses([]);
-          }
-          setIsHydrated(true);
+          const nextExpenses = snapshot.docs.map((docSnapshot) => ({
+            id: docSnapshot.id,
+            ...docSnapshot.data()
+          }));
+          setExpenses(nextExpenses);
         },
         (error) => {
           console.error('Failed to load data', error);
@@ -88,22 +83,6 @@ export default function App() {
       }
     };
   }, []);
-
-  // --- PERSISTENCE ---
-  useEffect(() => {
-    if (!isHydrated) return;
-
-    setDoc(
-      tripDocRef,
-      {
-        expenses,
-        updatedAt: serverTimestamp()
-      },
-      { merge: true }
-    ).catch((error) => {
-      console.error('Failed to save data', error);
-    });
-  }, [expenses, isHydrated]);
 
   // --- LOGIC: BALANCES ---
   const balances = useMemo(() => {
@@ -128,20 +107,25 @@ export default function App() {
   const totalSpent = expenses.reduce((sum, item) => sum + parseFloat(item.amount), 0);
 
   // --- ACTIONS ---
-  const handleAddExpense = (e) => {
+  const handleAddExpense = async (e) => {
     e.preventDefault();
     if (!amount || !description || involved.length === 0) return;
 
     const newExpense = {
-      id: Date.now(),
       amount: parseFloat(amount),
       description,
       payer,
       involved,
-      date: new Date().toISOString()
+      date: new Date().toISOString(),
+      createdAt: serverTimestamp()
     };
 
-    setExpenses([newExpense, ...expenses]);
+    try {
+      await addDoc(expensesCollectionRef, newExpense);
+    } catch (error) {
+      console.error('Failed to add expense', error);
+      return;
+    }
     
     // Reset Form (Keep Payer same, clear involved)
     setAmount('');
@@ -149,8 +133,12 @@ export default function App() {
     setInvolved([]); 
   };
 
-  const handleDeleteExpense = (id) => {
-    setExpenses(expenses.filter(exp => exp.id !== id));
+  const handleDeleteExpense = async (id) => {
+    try {
+      await deleteDoc(doc(db, 'expenses', id));
+    } catch (error) {
+      console.error('Failed to delete expense', error);
+    }
   };
 
   const toggleInvolved = (person) => {
